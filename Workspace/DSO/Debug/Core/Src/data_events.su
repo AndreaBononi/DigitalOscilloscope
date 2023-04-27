@@ -1,0 +1,13 @@
+data_events.c:13:6:DE_SystemEnable	4	static
+data_events.c:19:6:DE_SystemDisable	4	static
+data_events.c:25:5:DE_GetSystemStatus	4	static
+data_events.c:31:6:DE_SetTriggerAsDetected	4	static
+data_events.c:37:5:DE_GetTriggerStatus	4	static
+data_events.c:43:6:DE_SetTriggerAsUndetected	4	static
+data_events.c:49:5:DE_SetBufferAsFull	16	static
+data_events.c:68:5:DE_GetBufferStatus	16	static
+data_events.c:85:5:DE_SetBufferAsEmpty	16	static
+data_events.c:104:5:DE_GetActiveBuffer	4	static
+data_events.c:110:5:DE_SetActiveBuffer	16	static
+data_events.c:124:5:DE_SetBlockStatus	16	static
+data_events.c:150:5:DE_GetBlockStatus	16	static

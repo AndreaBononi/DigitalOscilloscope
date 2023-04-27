@@ -1,0 +1,540 @@
+#include "data_events.h"
+#include "data_operation.h"
+#include "DSO_application.h"
+#include "hwHandles.h"
+#include "serial.h"
+
+
+
+static uint32_t reloadValue, samplingPeriod;
+static int triggerLevel = 128;
+static int mode = AUTO;
+
+static volatile int triggerPosition;
+
+static volatile unsigned int adcRegularBufferIndex = 1;
+static volatile unsigned int adcInjectedBufferIndex = 2;
+static volatile uint8_t adcBuffer1[BUFFER_DIMENSION] = {0};					// buffer 1 per accumulare i risultati del convertitore
+static volatile uint8_t adcBuffer2[BUFFER_DIMENSION] = {0};					// buffer 2 per accumulare i risultati del convertitore
+static volatile int missingSamples = BUFFER_DIMENSION - 2;
+
+static volatile uint8_t OpCode_Buffer[OPCODE_DIMENSION + 1];   				// buffer contenente l'operation code ricevuto
+static volatile uint8_t TT[TT_DIMENSION + 1];   							// buffer contenente il trigger type ricevuto
+static volatile uint8_t TL[TL_DIMENSION + 1];   							// buffer contenente il trigger level ricevuto
+static volatile uint8_t SP[SP_DIMENSION + 1];   							// buffer contenente il samping period ricevuto
+
+static uint8_t mainBuffer[BUFFER_DIMENSION] = {0};
+
+static volatile int first = TRUE;
+
+static volatile HAL_StatusTypeDef HAL_RXstatus, HAL_TXstatus;
+
+static int isTrigger(int index);		// definizione funzione locale che verifica se un campione corrisponde al trigger
+
+
+
+void DSO_UserCode()
+{
+	int shift, RX_Stat, bufferIndex;
+
+	adcBuffer1[0] = '*';
+	adcBuffer1[BUFFER_DIMENSION - 1] = '#';
+	adcBuffer2[0] = '*';
+	adcBuffer2[BUFFER_DIMENSION - 1] = '#';
+
+	// Controlliamo se è disponibile un nuovo dato da inviare:
+	if ((DE_GetBufferStatus(ADCBUFFER1) == FULLBUFFER) || (DE_GetBufferStatus(ADCBUFFER2) == FULLBUFFER))
+	{
+		// Copia locale:
+		if(DE_GetBufferStatus(ADCBUFFER1) == FULLBUFFER)
+		{
+			for (bufferIndex = 0; bufferIndex < BUFFER_DIMENSION; bufferIndex++)
+			{
+				mainBuffer[bufferIndex] = adcBuffer1[bufferIndex];
+			}
+		}
+		else
+		{
+			for (bufferIndex = 0; bufferIndex < BUFFER_DIMENSION; bufferIndex++)
+			{
+				mainBuffer[bufferIndex] = adcBuffer2[bufferIndex];
+			}
+		}
+		// Allineamento buffer e successiva trasmissione:
+		if(SER_GetTxState() == TX_EMPTY)							// CANALE DI TRASMISSIONE LIBERO
+		{
+			// SHIFT:
+			/*if (triggerPosition < ((BUFFER_DIMENSION - 2) / 2))		// SHIFT A DESTRA
+			{
+				if ((triggerPosition % 2) == 0)						// indice pari, campione associato al CH1, deve portarsi in posizione 512
+				{
+					shift = (((BUFFER_DIMENSION - 2) / 2) + 1) - triggerPosition;
+				}
+				else    											// indice dispari, campione associato al CH0, deve portarsi in posizione 511
+				{
+					shift = ((BUFFER_DIMENSION - 2) / 2) - triggerPosition;
+				}
+				for (int i = 0; i < shift; i++)
+				{
+					DO_BufferRightShift(mainBuffer, BUFFER_DIMENSION);
+				}
+			}
+			else    												// SHIFT A SINISTRA
+			{
+				if ((triggerPosition % 2) == 0)						// indice pari, campione associato al CH1, deve portarsi in posizione 512
+				{
+					shift = triggerPosition - (((BUFFER_DIMENSION - 2) / 2) + 1);
+				}
+				else    											// indice dispari, campione associato al CH0, deve portarsi in posizione 511
+				{
+					shift = triggerPosition - ((BUFFER_DIMENSION - 2) / 2);
+				}
+				for (int i = 0; i < shift; i++)
+				{
+					DO_BufferLeftShift(mainBuffer, BUFFER_DIMENSION);
+				}
+			}*/
+			// INVIO DATO:
+			HAL_GPIO_WritePin (GPIOA, GPIO_PIN_5, GPIO_PIN_SET);	// segnaliamo le varie trasmissioni facendo lampeggiare il LED
+			HAL_TXstatus = HAL_UART_Transmit_IT(&huart2, (uint8_t *)mainBuffer, sizeof(mainBuffer));
+			if(SER_SetTxState(TX_FULL) != OK)   					// imposta il canale di trasmissione come occupato
+			{
+				Error_Handler();
+			}
+			// Rimozione segnalazione buffer pieno:
+			if(DE_GetBufferStatus(ADCBUFFER1) == FULLBUFFER)
+			{
+				DE_ClearBufferStatus(ADCBUFFER1);
+			}
+			else
+			{
+				DE_ClearBufferStatus(ADCBUFFER2);
+			}
+		}
+		else	// mainBuffer è stato aggiornato prima che la trasmissione precedente fosse finita
+		{
+			Error_Handler();
+		}
+	}
+
+	// Controlliamo lo stato del ricevitore:
+	RX_Stat = SER_GetRxState();
+	if(RX_Stat == RX_SP)   			// AGGIORNAMENTO SAMPLING PERIOD
+	{
+		DE_TriggerDisable();    	// fermiamo il sistema per poterlo ri-inizializzare
+		missingSamples = BUFFER_DIMENSION - 2;
+		DE_ClearTriggerStatus();
+		DE_ClearBufferStatus(ADCBUFFER1);
+		DE_ClearBufferStatus(ADCBUFFER2);
+		samplingPeriod = (SP[0] << 24) | (SP [1] << 16) | (SP[2] << 8) | SP[3];
+		reloadValue = samplingPeriod / 2000;
+		__HAL_TIM_SET_AUTORELOAD(&htim3, reloadValue);
+		if(mode != STOP)
+		{
+			DE_TriggerEnable();		// facciamo ripartire il rilevamento del trigger
+		}
+		if(SER_SetRxState(RX_EMPTY) != OK)   	// impostiamo linea di ricezione libera
+		{
+			Error_Handler();
+		}
+	}
+	else if(RX_Stat == RX_TL)   	// AGGIORNAMENTO TRIGGER LEVEL
+	{
+		DE_TriggerDisable();    	// fermiamo il sistema per poterlo ri-inizializzare
+		missingSamples = BUFFER_DIMENSION - 2;
+		DE_ClearTriggerStatus();
+		DE_ClearBufferStatus(ADCBUFFER1);
+		DE_ClearBufferStatus(ADCBUFFER2);
+		triggerLevel = TL[0];
+		if(mode != STOP)
+		{
+			DE_TriggerEnable();		// facciamo ripartire il rilevamento del trigger
+		}
+		if(SER_SetRxState(RX_EMPTY) != OK)   	// impostiamo linea di ricezione libera
+		{
+			Error_Handler();
+		}
+	}
+	else if(RX_Stat == RX_TT)   	// CAMBIO MODALITÀ DI LAVORO
+	{
+		DE_TriggerDisable();    	// fermiamo il sistema per poterlo ri-inizializzare
+		missingSamples = BUFFER_DIMENSION - 2;
+		DE_ClearTriggerStatus();
+		DE_ClearBufferStatus(ADCBUFFER1);
+		DE_ClearBufferStatus(ADCBUFFER2);
+		if(TT[0] == 0x00)
+		{
+			mode = AUTO;
+			DE_TriggerEnable();		// facciamo ripartire il rilevamento del trigger
+		}
+		else if(TT[0] == 0x01)
+		{
+			mode = NORMAL;
+			DE_TriggerEnable();    	// facciamo ripartire il rilevamento del trigger
+		}
+		else if(TT[0] == 0x02)
+		{
+			mode = SINGLE;
+			DE_TriggerEnable();    	// facciamo ripartire il rilevamento del trigger
+		}
+		else
+		{
+			mode = STOP;			// in questo caso non ri-abilitiamo la sensibilià ai trigger
+		}
+		if(SER_SetRxState(RX_EMPTY) != OK)   	// impostiamo linea di ricezione libera
+		{
+			Error_Handler();
+		}
+	}
+}
+
+
+
+void DSO_StartRX()
+{
+	HAL_RXstatus = HAL_UART_Receive_IT(&huart2, (uint8_t *)OpCode_Buffer, sizeof(OpCode_Buffer));
+}
+
+
+
+void HAL_TIM_ErrorCallback(TIM_HandleTypeDef *htim)
+{
+	Error_Handler();
+}
+
+
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if(HAL_TXstatus != HAL_OK)
+	{
+		Error_Handler();
+	}
+	else if(huart == &huart2)
+	{
+		if(SER_SetTxState(TX_EMPTY) != OK)		// impostiamo il canale di trasmissione come libero
+		{
+			Error_Handler();
+		}
+		if (mode != SINGLE)
+		{
+			DE_TriggerEnable();    				// riabilita il sistema ad essere sensibile ai trigger
+			if (first == TRUE)    				// Il blocco inviato era il primo
+			{
+				first = FALSE;
+			}
+		}
+		// Segnaliamo le varie trasmissioni facendo lampeggiare il LED:
+		HAL_GPIO_WritePin (GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	}
+}
+
+
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	int SER_Status, RX_Status;
+	RX_Status = SER_GetRxState();
+
+    if(HAL_RXstatus != HAL_OK)
+    {
+    	Error_Handler();
+    }
+    else if(huart == &huart2)
+	{
+		if(RX_Status == RX_EMPTY)   // Il dato ricevuto è un OpCode
+		{
+			if(OpCode_Buffer[0] == '*')
+			{
+				if((OpCode_Buffer[1] == 'T') && (OpCode_Buffer[2] == 'T'))   				// TRIGGER TYPE OPCODE
+				{
+					SER_Status = SER_SetRxState(RX_OPCODE_TT);   							// Segnaliamo ricezione OpCode
+					HAL_RXstatus = HAL_UART_Receive_IT(&huart2, (uint8_t *)TT, sizeof(TT)); // Avvio ricezione trigger type
+				}
+				else if((OpCode_Buffer[1] == 'T') && (OpCode_Buffer[2] == 'L'))   			// TRIGGER LEVEL OPCODE
+				{
+					SER_Status = SER_SetRxState(RX_OPCODE_TL);   							// Segnaliamo ricezione OpCode
+					HAL_RXstatus = HAL_UART_Receive_IT(&huart2, (uint8_t *)TL, sizeof(TL)); // Avvio ricezione trigger level
+				}
+				else if((OpCode_Buffer[1] == 'S') && (OpCode_Buffer[2] == 'P'))   			// SAMPLING PERIOD OPCODE
+				{
+					SER_Status = SER_SetRxState(RX_OPCODE_SP);   							// Segnaliamo ricezione OpCode
+					HAL_RXstatus = HAL_UART_Receive_IT(&huart2, (uint8_t *)SP, sizeof(SP)); // Avvio ricezione sampling period
+				}
+			}
+		}
+		else if(RX_Status == RX_TT || RX_Status == RX_TL || RX_Status == RX_SP)   // OverRun
+		{
+			Error_Handler();
+		}
+		else   // Il dato ricevuto è il valore associato all'OpCode precedentemente ricevuto
+		{
+			if(RX_Status == RX_OPCODE_TT)   				// IL DATO RICEVUTO È IL TRIGGER TYPE
+			{
+				if(TT[TT_DIMENSION] == '#')   							// dato valido
+				{
+					SER_Status = SER_SetRxState(RX_TT);   		// segnaliamo la ricezione del TT
+				}
+				else   										// dato non valido
+				{
+					SER_Status = SER_SetRxState(RX_EMPTY);		// il ricevitore rimane vuoto
+				}
+			}
+			else if(RX_Status == RX_OPCODE_TL)   			// IL DATO RICEVUTO È IL TRIGGER LEVEL
+			{
+				if(TL[TL_DIMENSION] == '#')   							// dato valido
+				{
+					SER_Status = SER_SetRxState(RX_TL);  		// segnaliamo la ricezione del TL
+				}
+				else   										// dato non valido
+				{
+					SER_Status = SER_SetRxState(RX_EMPTY);   	// il ricevitore rimane vuoto
+				}
+			}
+			else if(RX_Status == RX_OPCODE_SP)   			// IL DATO RICEVUTO È IL SAMPLING PERIOD
+			{
+				if(SP[SP_DIMENSION] == '#')   							// dato valido
+				{
+					SER_Status = SER_SetRxState(RX_SP);   		// segnaliamo la ricezione del SP
+				}
+				else   										// dato non valido
+				{
+					SER_Status = SER_SetRxState(RX_EMPTY);   	// il ricevitore rimane vuoto
+				}
+			}
+			// Iniziamo una nuova ricezione:
+			HAL_RXstatus = HAL_UART_Receive_IT(&huart2, (uint8_t *)OpCode_Buffer, sizeof(OpCode_Buffer));
+		}
+		// Controllo errori:
+		if(SER_Status != OK)
+		{
+			Error_Handler();
+		}
+	}
+}
+
+
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+	Error_Handler();
+}
+
+
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	int activeBuffer;
+	if(hadc == &hadc1)
+	{
+		activeBuffer = DE_GetActiveBuffer();
+		// Salvataggio del valore campionato:
+		if (activeBuffer == ADCBUFFER1)
+		{
+			adcBuffer1[adcRegularBufferIndex] = HAL_ADC_GetValue(&hadc1);
+		}
+		else
+		{
+			adcBuffer2[adcRegularBufferIndex] = HAL_ADC_GetValue(&hadc1);
+		}
+		if (DE_GetConversionSystemStatus() == TRIGGER_ENABLED)    		// IL SISTEMA È SENSIBILE AI TRIGGER
+		{
+			missingSamples --;
+			if (DE_GetTriggerStatus() == DETECTED)    					// IL TRIGGER È GIÀ STATO RILEVATO
+			{
+				if ((missingSamples == 0) && (DE_GetBufferStatus(ADCBUFFER1) == EMPTYBUFFER) &&
+					(DE_GetBufferStatus(ADCBUFFER2) == EMPTYBUFFER))	// blocco valido
+				{
+					DE_TriggerDisable();    							// disabilita il sistema ad essere sensibile ai trigger
+					// Segnala disponibiltà di un nuovo blocco:
+					if(activeBuffer == ADCBUFFER1)
+					{
+						DE_SetBufferAsFull(ADCBUFFER1);
+						DE_SetActiveBuffer(ADCBUFFER2);
+					}
+					else
+					{
+						DE_SetBufferAsFull(ADCBUFFER2);
+						DE_SetActiveBuffer(ADCBUFFER1);
+					}
+					adcRegularBufferIndex = 0;
+					// Prepariamo il sistema per quando sarà nuovamente abilitato a sentire i trigger:
+					missingSamples = BUFFER_DIMENSION - 2;
+					DE_ClearTriggerStatus();
+				}
+			}
+			else    // IL TRIGGER NON È ANCORA STATO RILEVATO
+			{
+				if (/*isTrigger(adcRegularBufferIndex) == TRUE ||*/ (mode == AUTO && missingSamples <= (((BUFFER_DIMENSION - 2) / 2) - 1)))
+				{
+					// Il campione è il trigger, oppure siamo in AUTO e abbiamo acquisito metà campioni senza trovare il trigger
+					DE_TriggerDetected();    							// segnala acquisizione trigger
+					triggerPosition = adcRegularBufferIndex;			// memorizza posizione trigger
+					missingSamples = (((BUFFER_DIMENSION - 2) / 2) - 1);
+				}
+				else
+				{
+					if (missingSamples <= 0)
+					{
+						missingSamples = BUFFER_DIMENSION - 2;
+					}
+				}
+			}
+		}
+		adcRegularBufferIndex = adcRegularBufferIndex + 2;				// incremento indice
+		if (adcRegularBufferIndex > BUFFER_DIMENSION - 3)    			// se l'indice supera il valore massimo, deve tornare all'inizio
+		{
+			adcRegularBufferIndex = 1;
+		}
+	}
+}
+
+
+
+void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	int activeBuffer;
+	if (hadc == &hadc1)
+	{
+		activeBuffer = DE_GetActiveBuffer();
+		// Salvataggio del valore campionato:
+		if (activeBuffer == ADCBUFFER1)
+		{
+			adcBuffer1[adcInjectedBufferIndex] = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
+		}
+		else
+		{
+			adcBuffer2[adcInjectedBufferIndex] = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
+		}
+		if (DE_GetConversionSystemStatus() == TRIGGER_ENABLED)    		// IL SISTEMA È SENSIBILE AI TRIGGER
+		{
+			missingSamples --;   		 								// decremento del numero di campioni rimanenti da acquisire dal CH0
+			if (DE_GetTriggerStatus() == DETECTED)    					// IL TRIGGER È GIÀ STATO RILEVATO
+			{
+				if ((missingSamples <= 0) && (DE_GetBufferStatus(ADCBUFFER1) == EMPTYBUFFER) &&
+					(DE_GetBufferStatus(ADCBUFFER2) == EMPTYBUFFER))	// blocco valido
+				{
+					DE_TriggerDisable();    							// disabilita il sistema ad essere sensibile ai trigger
+					// Segnala disponibiltà di un nuovo blocco:
+					if(activeBuffer == ADCBUFFER1)
+					{
+						DE_SetBufferAsFull(ADCBUFFER1);
+						DE_SetActiveBuffer(ADCBUFFER2);
+					}
+					else
+					{
+						DE_SetBufferAsFull(ADCBUFFER2);
+						DE_SetActiveBuffer(ADCBUFFER1);
+					}
+					adcInjectedBufferIndex = 0;
+					// Prepariamo il sistema per quando sarà nuovamente abilitato a sentire i trigger:
+					missingSamples = BUFFER_DIMENSION - 2;
+					DE_ClearTriggerStatus();
+				}
+			}
+			else    // IL TRIGGER NON È ANCORA STATO RILEVATO
+			{
+				if (/*isTrigger(adcInjectedBufferIndex) == TRUE ||*/ (mode == AUTO && missingSamples <= (((BUFFER_DIMENSION - 2) / 2) - 1)))
+				{
+					// Il campione è il trigger, oppure siamo in AUTO e abbiamo acquisito metà campioni senza trovare il trigger
+					DE_TriggerDetected();    						// segnala acquisizione trigger
+					triggerPosition = adcInjectedBufferIndex;		// memorizza posizione trigger
+					missingSamples = (((BUFFER_DIMENSION - 2) / 2) - 1);
+				}
+				else
+				{
+					if (missingSamples <= 0)
+					{
+						missingSamples = BUFFER_DIMENSION - 2;
+					}
+				}
+			}
+		}
+		adcInjectedBufferIndex = adcInjectedBufferIndex + 2;
+		if (adcInjectedBufferIndex > BUFFER_DIMENSION - 2)    		// se l'indice supera il valore massimo, deve tornare all'inizio
+		{
+			adcInjectedBufferIndex = 2;
+		}
+	}
+}
+
+
+
+void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc)
+{
+	//Error_Handler();
+}
+
+
+
+static int isTrigger(int index)
+{
+	if(DE_GetActiveBuffer() == ADCBUFFER1)
+	{
+		if(index != 1)
+		{
+			if((adcBuffer1[index] >= triggerLevel) && (adcBuffer1[index - 2] < triggerLevel))
+			{
+				return TRUE;
+			}
+			else
+			{
+				return FALSE;
+			}
+		}
+		else
+		{
+			if (first == TRUE)   	// Se il campione è il primo del primo blocco, sicuramente non è il trigger
+			{
+				return FALSE;
+			}
+			else    				// Abbiamo già acquisito il primo blocco
+			{
+				if((adcBuffer1[index] >= triggerLevel) && (adcBuffer1[BUFFER_DIMENSION - 3] < triggerLevel))
+				{
+					return TRUE;
+				}
+				else
+				{
+					return FALSE;
+				}
+			}
+		}
+	}
+	else
+	{
+		if(index != 1)
+		{
+			if((adcBuffer1[index] >= triggerLevel) && (adcBuffer1[index - 2] < triggerLevel))
+			{
+				return TRUE;
+			}
+			else
+			{
+				return FALSE;
+			}
+		}
+		else
+		{
+			if (first == TRUE)   	// Se il campione è il primo del primo blocco, sicuramente non è il trigger
+			{
+				return FALSE;
+			}
+			else    				// Abbiamo già acquisito il primo blocco
+			{
+				if((adcBuffer1[index] >= triggerLevel) && (adcBuffer1[BUFFER_DIMENSION - 3] < triggerLevel))
+				{
+					return TRUE;
+				}
+				else
+				{
+					return FALSE;
+				}
+			}
+		}
+	}
+}
+
+
+
+/* END OF FILE */

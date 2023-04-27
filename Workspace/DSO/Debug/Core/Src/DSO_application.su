@@ -1,0 +1,9 @@
+DSO_application.c:33:6:DSO_UserCode	40	static
+DSO_application.c:223:6:DSO_StartRX	8	static
+DSO_application.c:230:6:HAL_UART_TxCpltCallback	16	static
+DSO_application.c:257:6:HAL_UART_RxCpltCallback	24	static
+DSO_application.c:341:6:HAL_UART_ErrorCallback	16	static
+DSO_application.c:348:6:HAL_ADC_ConvCpltCallback	24	static
+DSO_application.c:460:6:HAL_ADCEx_InjectedConvCpltCallback	24	static
+DSO_application.c:543:6:HAL_ADC_ErrorCallback	16	static
+DSO_application.c:550:12:isTrigger	16	static

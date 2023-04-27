@@ -1,0 +1,4 @@
+serial.c:7:5:SER_GetRxState	4	static
+serial.c:13:5:SER_GetTxState	4	static
+serial.c:19:5:SER_SetRxState	16	static
+serial.c:34:5:SER_SetTxState	16	static

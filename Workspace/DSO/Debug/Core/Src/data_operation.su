@@ -1,0 +1,2 @@
+data_operation.c:6:6:DO_BufferLeftShift	24	static
+data_operation.c:18:6:DO_BufferRightShift	24	static
