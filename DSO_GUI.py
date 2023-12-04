@@ -1,19 +1,20 @@
 #!/usr/bin/env python
 
+# public modules -----------------------------------------------------------------------------------------------------------------------
 from tkinter import *
-from tkinter import ttk						# Widgets
-from tkinter import messagebox as msg		# Pop-up messages
+from tkinter import ttk
+from tkinter import messagebox as msg
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg		# Interfaccia tra matplotlib e tkinter
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import serial
 
-# VALORI DI DEFAULT:
+# default values -----------------------------------------------------------------------------------------------------------------------
 defaultTriggerType = "AUTO"
 defaultTriggerLevel = 128
 defaultTriggerPosition = 128
 defaultTimeInterval = 0.256		# defaultTimeInterval = 256 * defaultSamplingPeriod = 256 / 1000 Hz
 
-# INIZIALIZZAZIONI:
+# initialization -----------------------------------------------------------------------------------------------------------------------
 TP = defaultTriggerPosition
 TL = defaultTriggerLevel
 TT = defaultTriggerType
@@ -29,12 +30,8 @@ for i in range(0, 256):
 	xCH1.append(i)
 	yCH1.append(0)
 
-
-
-#######################################################################################################################################################
-# FUNZIONI
-
-
+# FUNCTIONS ---------------------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------------------------
 def drawGraph():
 	global yCH0
 	global yCH1
@@ -46,8 +43,7 @@ def drawGraph():
 	graph.plot(xCH0, yCH0)
 	graph.plot(xCH1, yCH1)
 	plottingFigure_canvas.draw()
-	
-	
+# -------------------------------------------------------------------------------------------------------------------------------------
 def updateTL():
 	global TL
 	global serialCom
@@ -69,8 +65,7 @@ def updateTL():
 		# Invio parametro su porta seriale:
 		TL_opcode = b''.join([b'*TL', TL.to_bytes(1, byteorder = "big") , b'#'])	# Creazione vettore di bytes
 		serialCom.write(TL_opcode)
-
-
+# -------------------------------------------------------------------------------------------------------------------------------------
 def updateTP():
 	global TP
 	error = False
@@ -88,15 +83,14 @@ def updateTP():
 	else:
 		# Aggiornamento al nuovo valore:
 		TP = loc_TP
-
-
+# -------------------------------------------------------------------------------------------------------------------------------------
 def updateTI():
 	global TI
 	global lastTimeUnit
 	error = False
 	try:
 		loc_TI = float(timeInterval_val.get())
-		samplingPeriod = loc_TI / 256.0	
+		samplingPeriod = loc_TI / 256.0
 		newTimeUnit = timeUnit.get()
 		if(newTimeUnit == "s"):
 			samplingPeriod = samplingPeriod * 1000000000
@@ -143,8 +137,7 @@ def updateTI():
 		# Invio parametro su porta seriale:
 		SP_opcode = b''.join([b'*SP', samplingPeriod.to_bytes(4, byteorder = "big") , b'#'])	# Creazione vettore di bytes
 		serialCom.write(SP_opcode)
-
-
+# -------------------------------------------------------------------------------------------------------------------------------------
 def updateTT():
 	global TT
 	TT = triggerType_cbox.get()
@@ -159,8 +152,7 @@ def updateTT():
 	# Invio parametro su porta seriale:
 	TT_opcode = b''.join([b'*TT', mode.to_bytes(1, byteorder = "big") , b'#'])	# Creazione vettore di bytes
 	serialCom.write(TT_opcode)
-		
-		
+# -------------------------------------------------------------------------------------------------------------------------------------
 def serialLoop():
 	bufferCH0 = []
 	bufferCH1 = []
@@ -196,11 +188,9 @@ def serialLoop():
 	# Se vengono ricevuti byte non racchiusi tra *# dobbiamo ignorarli, ma bisogna comunque iniziare una nuova ricezione
 	if(flag == 0):
 		mainWindow.after(0, serialLoop)
-		
+# -------------------------------------------------------------------------------------------------------------------------------------
 
-#######################################################################################################################################################
-# MAIN
-
+# MAIN --------------------------------------------------------------------------------------------------------------------------------
 
 # Apertura porta seriale (TIMEOUT è espresso in secondi e deve essere abbastanza grande da permettere la ricezione di 1022 bytes)
 # serialCom = serial.Serial(port = "/dev/ttyUSB0", baudrate = 115200, bytesize = 8, timeout = 0.2)
@@ -222,8 +212,8 @@ timeUnit = StringVar()
 triggerType = StringVar()
 
 # Creazione oggetti di selezione per triggerLevel:
-triggerLevel_val = ttk.Entry(mainFrame, width = 10, textvariable = triggerLevel)							# Casella di ingresso 
-triggerLevel_val.grid(column = 3, row = 0, sticky = (N, W, E, S), pady = 10)											
+triggerLevel_val = ttk.Entry(mainFrame, width = 10, textvariable = triggerLevel)							# Casella di ingresso
+triggerLevel_val.grid(column = 3, row = 0, sticky = (N, W, E, S), pady = 10)
 ttk.Label(mainFrame, text = " Trigger Level ").grid(column = 2, row = 0, sticky = E, pady = 10)				# Etichetta
 TL_updateButton = ttk.Button(mainFrame, text = "Update TL", command = updateTL)								# Bottone di update
 TL_updateButton.grid(column = 4, row = 0, sticky = (N, W, E, S), pady = 10)
@@ -270,7 +260,7 @@ plottingFigure_canvas = FigureCanvasTkAgg(plottingFigure, master = mainWindow)
 # Aggiunta del canvas alla finestra principale (tkinter):
 plottingFigure_canvas.get_tk_widget().grid(column = 0, row = 0, sticky = (N, W, E, S))
 
-# Configuriamo il grafico in modo che si ingradisca proporzionalmente espandendo mainWindow 
+# Configuriamo il grafico in modo che si ingradisca proporzionalmente espandendo mainWindow
 mainWindow.columnconfigure(0, weight = 1)
 mainWindow.rowconfigure(0, weight = 1)
 
