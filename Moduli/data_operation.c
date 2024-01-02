@@ -29,7 +29,7 @@ void DO_BufferRightShift( uint8_t *buffer, int dimension )
 {
 	int j = 0;
 	int box = buffer[dimension - 2];
-	for(j = (dimension - 3); j > 0; j--) {
+	for ( j = (dimension - 3); j > 0; j-- ) {
 		buffer[j+1] = buffer[j];
 	}
 	buffer[1] = box;

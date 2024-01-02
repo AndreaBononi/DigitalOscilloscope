@@ -28,8 +28,8 @@ static int            mode = AUTO;
 static volatile int   triggerPosition;
 static volatile int   missingSamples = BUFFER_DIMENSION - 2;
 
-static volatile HAL_StatusTypeDef HAL_RXstatus;
-static volatile HAL_StatusTypeDef HAL_TXstatus;
+static volatile       HAL_StatusTypeDef HAL_RXstatus;
+static volatile       HAL_StatusTypeDef HAL_TXstatus;
 
 static volatile unsigned int adcRegularChannel_BufferIndex = 1;     /* indice utilizzato da ADC regular channel */
 static volatile unsigned int adcInjectedChannel_BufferIndex = 2;    /* indice utilizzato da ADC injected channel */
@@ -137,18 +137,18 @@ void DSO_UserCode() {
 			}
       /* INVIO DATO ----------------------------------------------------------------------------------------------------------------- */
 			HAL_GPIO_WritePin( LED_GPIO_Port, LED_Pin, GPIO_PIN_SET );
-			HAL_TXstatus = HAL_UART_Transmit_IT( &huart2, (uint8_t *)mainBuffer, sizeof( mainBuffer ) );   /* invio dato */
-			if ( DE_GetBufferStatus(DE_ADCBUFFER1) == DE_FULLBUFFER ) {            
-				if ( DE_SetBufferAsEmpty(DE_ADCBUFFER1) == DE_ERROR ) {   /* rimozione segnalazione buffer pieno */
+			HAL_TXstatus = HAL_UART_Transmit_IT( &huart2, ( uint8_t * )mainBuffer, sizeof( mainBuffer ) );  /* invio dato */
+			if ( DE_GetBufferStatus( DE_ADCBUFFER1 ) == DE_FULLBUFFER ) {            
+				if ( DE_SetBufferAsEmpty( DE_ADCBUFFER1 ) == DE_ERROR ) {           /* rimozione segnalazione buffer pieno */
 					Error_Handler();
 				}
 			}
 			else {
-				if ( DE_SetBufferAsEmpty(DE_ADCBUFFER2) == DE_ERROR ) {
+				if ( DE_SetBufferAsEmpty( DE_ADCBUFFER2 ) == DE_ERROR ) {
 					Error_Handler();
 				}
 			}
-			if(SER_SetTxState(SER_TX_FULL) != SER_OK) {   /* impostazione canale di trasmissione come occupato */
+			if( SER_SetTxState(SER_TX_FULL) != SER_OK ) {           /* impostazione canale di trasmissione come occupato */
 				Error_Handler();
 			}
 		}
@@ -159,7 +159,7 @@ void DSO_UserCode() {
 
 	/* CONTROLLO DISPONIBILITÀ NUOVO DATO IN RICEZIONE -------------------------------------------------------------------------------- */
 	RX_stat = SER_GetRxState();
-	if (RX_stat == SER_RX_SP || RX_stat == SER_RX_TL || RX_stat == SER_RX_TT) {
+	if ( RX_stat == SER_RX_SP || RX_stat == SER_RX_TL || RX_stat == SER_RX_TT ) {
 		/* 
      * STOP E RI-INIZIALIZZAZIONE DEL SISTEMA ------------------------------------------------------------------------------------------
      * sensibilità ai trigger disattivata
@@ -169,10 +169,10 @@ void DSO_UserCode() {
 		DE_SystemDisable();
 		missingSamples = BUFFER_DIMENSION - 2;
 		DE_SetTriggerAsUndetected();
-		if ( DE_SetBufferAsEmpty(DE_ADCBUFFER1) == DE_ERROR ) {
+		if ( DE_SetBufferAsEmpty( DE_ADCBUFFER1 ) == DE_ERROR ) {
 			Error_Handler();
 		}
-		if ( DE_SetBufferAsEmpty(DE_ADCBUFFER2) == DE_ERROR ) {
+		if ( DE_SetBufferAsEmpty( DE_ADCBUFFER2 ) == DE_ERROR ) {
 			Error_Handler();
 		}
 		/* 
@@ -316,108 +316,108 @@ void HAL_UART_ErrorCallback( UART_HandleTypeDef *huart ) {
 /* ---------------------------------------------------------------------------------------------------------------------------------- */
 
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	int activeBuffer, localError;
-	if(hadc == &hadc1)
+void HAL_ADC_ConvCpltCallback( ADC_HandleTypeDef* hadc ) {
+	int activeBuffer; 
+  int err;
+	if ( hadc == &hadc1 )
 	{
 		activeBuffer = DE_GetActiveBuffer();
-		// Salvataggio del valore campionato:
-		if (activeBuffer == DE_ADCBUFFER1)
-		{
-			adcBuffer1[adcRegularChannel_BufferIndex] = HAL_ADC_GetValue(&hadc1);
+		/* SALVATAGGIO VALORE CAMPIONATO ------------------------------------------------------------------------------------------------ */
+		if ( activeBuffer == DE_ADCBUFFER1 ) {
+			adcBuffer1[adcRegularChannel_BufferIndex] = HAL_ADC_GetValue( &hadc1 );
 		}
-		else
-		{
-			adcBuffer2[adcRegularChannel_BufferIndex] = HAL_ADC_GetValue(&hadc1);
+		else {
+			adcBuffer2[adcRegularChannel_BufferIndex] = HAL_ADC_GetValue( &hadc1 );
 		}
-		// Elaborazione valore campionato:
-		if (DE_GetSystemStatus() == DE_TRIGGERENABLED)    							// IL SISTEMA È SENSIBILE AI TRIGGER
-		{
+		/* ELABORAZIONE VALORE CAMPIONATO ----------------------------------------------------------------------------------------------- */
+		if ( DE_GetSystemStatus() == DE_TRIGGERENABLED ) {
 			missingSamples --;
-			if (DE_GetTriggerStatus() == DE_DETECTED)    							// IL TRIGGER È GIÀ STATO RILEVATO
-			{
-				if((DE_GetBufferStatus(DE_ADCBUFFER1) == DE_EMPTYBUFFER) && (DE_GetBufferStatus(DE_ADCBUFFER2) == DE_EMPTYBUFFER))
-				{
-					if (missingSamples == 0)										// buffer valido
-					{
-						DE_SystemDisable();    										// disabilita il sistema ad essere sensibile ai trigger
-						// Segnala disponibiltà di un nuovo blocco:
-						if(activeBuffer == DE_ADCBUFFER1)
-						{
-							localError = DE_SetBufferAsFull(DE_ADCBUFFER1);						// segnala che il buffer1 è pronto
-							localError = localError + DE_SetActiveBuffer(DE_ADCBUFFER2);		// imposta il buffer2 per i prossimi campionamenti
-							localError = localError + DE_SetBlockStatus(DE_STARTBLOCK, DE_ADCBUFFER2);		// Quando un buffer viene attivato, blockStatus viene impostato a STARTBLOCK
-							if(localError != DE_OK)
-							{
+			if ( DE_GetTriggerStatus() == DE_DETECTED ) {   							          /* IL TRIGGER È GIÀ STATO RILEVATO */
+				if
+        (
+          DE_GetBufferStatus( DE_ADCBUFFER1 ) == DE_EMPTYBUFFER && 
+          DE_GetBufferStatus( DE_ADCBUFFER2 ) == DE_EMPTYBUFFER
+        ) {
+					if ( missingSamples == 0 ) {										                    /* buffer valido */
+						DE_SystemDisable();    										                        /* disabilita sensibilità ai trigger */
+						/* segnalazione disponibiltà nuovo blocco */
+						if ( activeBuffer == DE_ADCBUFFER1 ) {
+							err = DE_SetBufferAsFull( DE_ADCBUFFER1 );						          /* segnala buffer1 pronto */
+							err = err + DE_SetActiveBuffer( DE_ADCBUFFER2 );		            /* imposta buffer2 per i prossimi campionamenti */
+							err = err + DE_SetBlockStatus( DE_STARTBLOCK, DE_ADCBUFFER2 );	/* attivazione buffer --> blockStatus impostato a STARTBLOCK */
+							if ( err != DE_OK ) {
 								Error_Handler();
 							}
 						}
-						else
-						{
-							localError = DE_SetBufferAsFull(DE_ADCBUFFER2);						// segnala che il buffer1 è pronto
-							localError = localError + DE_SetActiveBuffer(DE_ADCBUFFER1);		// imposta il buffer2 per i prossimi campionamenti
-							localError = localError + DE_SetBlockStatus(DE_STARTBLOCK, DE_ADCBUFFER1);		// Quando un buffer viene attivato, blockStatus viene impostato a STARTBLOCK
-							if(localError != DE_OK)
-							{
+						else {
+							err = DE_SetBufferAsFull( DE_ADCBUFFER2 );						          /* segnala buffer1 pronto */
+							err = err + DE_SetActiveBuffer( DE_ADCBUFFER1 );		            /* imposta buffer2 per i prossimi campionamenti */
+							err = err + DE_SetBlockStatus( DE_STARTBLOCK, DE_ADCBUFFER1 );	/* attivazione buffer --> blockStatus impostato a STARTBLOCK */
+							if ( err != DE_OK ) {
 								Error_Handler();
 							}
 						}
 						adcRegularChannel_BufferIndex = 1;
-						// Prepariamo il sistema per quando sarà nuovamente abilitato a sentire i trigger:
+						/* preparazione sistema per quando sarà nuovamente sensibile ai trigger */
 						missingSamples = BUFFER_DIMENSION - 2;
 						DE_SetTriggerAsUndetected();
 					}
 				}
-				else
-				{
+				else {
 					Error_Handler();
 				}
 			}
-			else    // IL TRIGGER NON È ANCORA STATO RILEVATO
-			{
-				if (isTrigger(adcRegularChannel_BufferIndex) == TRUE || (mode == AUTO && missingSamples <= (((BUFFER_DIMENSION - 2) / 2) - 1)))
-				{
-					// Il campione è il trigger, oppure siamo in AUTO e abbiamo acquisito metà campioni senza trovare il trigger
-					DE_SetTriggerAsDetected();    							// segnala acquisizione trigger
-					triggerPosition = adcRegularChannel_BufferIndex;		// memorizza posizione trigger
-					missingSamples = ((BUFFER_DIMENSION - 2) / 2);
+			else {                                                                  /* IL TRIGGER NON È ANCORA STATO RILEVATO */
+				if
+        (
+          isTrigger( adcRegularChannel_BufferIndex ) == TRUE || 
+          ( mode == AUTO && missingSamples <= ((BUFFER_DIMENSION / 2) - 2) )
+        ) {
+					/* o il campione è il trigger, oppure siamo in AUTO e abbiamo acquisito metà campioni senza trovare il trigger */
+					DE_SetTriggerAsDetected();    							                        /* segnala acquisizione trigger */
+					triggerPosition = adcRegularChannel_BufferIndex;		                /* memorizza posizione trigger */
+					missingSamples = (BUFFER_DIMENSION / 2) - 1;
 				}
-				else
-				{
-					if (missingSamples <= 0)
-					{
+				else {
+					if ( missingSamples <= 0 ) {
 						missingSamples = BUFFER_DIMENSION - 2;
 					}
 				}
 			}
 		}
-		// Aggiornamento indice:
+    /* AGGIORNAMENTO INDICE ------------------------------------------------------------------------------------------------------------
+     * il sistema inizia ad essere sensibile ai trigger solo dopo aver aquisito 1022 campioni dall'accensione 
+     * quando un buffer viene attivato, blockStatus viene impostato a STARTBLOCK
+     * quando il buffer viene riempito la prima volta dopo l'attivazione, blockStatus diventa FOLLOWINGBLOCK
+     */
 		adcRegularChannel_BufferIndex = adcRegularChannel_BufferIndex + 2;
-		if (adcRegularChannel_BufferIndex > BUFFER_DIMENSION - 3)
-		{
+		if ( adcRegularChannel_BufferIndex > BUFFER_DIMENSION - 3 ) {
 			adcRegularChannel_BufferIndex = 1;
-			// Il sistema inizia ad essere sensibile ai trigger solo dopo aver aquisito 1022 campioni dall'accensione
-			if((DE_GetActiveBuffer() == DE_ADCBUFFER1) && (DE_GetBlockStatus(DE_ADCBUFFER1) == DE_INITIALBLOCK))
-			{
-				if(DE_SetBlockStatus(DE_STARTBLOCK, DE_ADCBUFFER1) == DE_ERROR)
-				{
+			if
+      (
+        DE_GetActiveBuffer() == DE_ADCBUFFER1 && 
+        DE_GetBlockStatus( DE_ADCBUFFER1 ) == DE_INITIALBLOCK
+      ) {
+				if ( DE_SetBlockStatus( DE_STARTBLOCK, DE_ADCBUFFER1 ) == DE_ERROR ) {
 					Error_Handler();
 				}
 				DE_SystemEnable();
 			}
-			// Quando un buffer viene attivato, blockStatus viene impostato a STARTBLOCK
-			// Quando il buffer viene riempito la prima volta dopo l'attivazione, blockStatus diventa FOLLOWINGBLOCK
-			else if((DE_GetActiveBuffer() == DE_ADCBUFFER1) && (DE_GetBlockStatus(DE_ADCBUFFER1) == DE_STARTBLOCK))
-			{
-				if(DE_SetBlockStatus(DE_FOLLOWINGBLOCK, DE_ADCBUFFER1) == DE_ERROR)
-				{
+			else if
+      (
+        DE_GetActiveBuffer() == DE_ADCBUFFER1 &&
+        DE_GetBlockStatus( DE_ADCBUFFER1 ) == DE_STARTBLOCK
+      ) {
+				if ( DE_SetBlockStatus( DE_FOLLOWINGBLOCK, DE_ADCBUFFER1 ) == DE_ERROR ) {
 					Error_Handler();
 				}
 			}
-			else if((DE_GetActiveBuffer() == DE_ADCBUFFER2) && (DE_GetBlockStatus(DE_ADCBUFFER2) == DE_STARTBLOCK))
-			{
-				if(DE_SetBlockStatus(DE_FOLLOWINGBLOCK, DE_ADCBUFFER2) == DE_ERROR)
-				{
+			else if
+      (
+        DE_GetActiveBuffer() == DE_ADCBUFFER2 && 
+        DE_GetBlockStatus( DE_ADCBUFFER2 ) == DE_STARTBLOCK
+      ) {
+				if ( DE_SetBlockStatus( DE_FOLLOWINGBLOCK, DE_ADCBUFFER2 ) == DE_ERROR ) {
 					Error_Handler();
 				}
 			}
@@ -426,147 +426,131 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 }
 
 
+/* ---------------------------------------------------------------------------------------------------------------------------------- */
 
-void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
-{
-	int activeBuffer, localError;
-	if (hadc == &hadc1)
-	{
+
+void HAL_ADCEx_InjectedConvCpltCallback( ADC_HandleTypeDef* hadc ) {
+	int activeBuffer;
+  int err;
+	if ( hadc == &hadc1 ) {
 		activeBuffer = DE_GetActiveBuffer();
-		// Salvataggio del valore campionato:
-		if (activeBuffer == DE_ADCBUFFER1)
-		{
-			adcBuffer1[adcInjectedChannel_BufferIndex] = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
+		/* SALVATAGGIO VALORE CAMPIONATO ------------------------------------------------------------------------------------------------ */
+		if ( activeBuffer == DE_ADCBUFFER1 ) {
+			adcBuffer1[adcInjectedChannel_BufferIndex] = HAL_ADCEx_InjectedGetValue( &hadc1, ADC_INJECTED_RANK_1 );
 		}
-		else
-		{
-			adcBuffer2[adcInjectedChannel_BufferIndex] = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
+		else {
+			adcBuffer2[adcInjectedChannel_BufferIndex] = HAL_ADCEx_InjectedGetValue( &hadc1, ADC_INJECTED_RANK_1 );
 		}
-		// Elaborazione del valore campionato:
-		if (DE_GetSystemStatus() == DE_TRIGGERENABLED)    					// IL SISTEMA È SENSIBILE AI TRIGGER
-		{
-			missingSamples --;   		 									// decremento del numero di campioni rimanenti da acquisire dal CH0
-			if (DE_GetTriggerStatus() == DE_DETECTED)    					// IL TRIGGER È GIÀ STATO RILEVATO
-			{
-				if ((DE_GetBufferStatus(DE_ADCBUFFER1) == DE_EMPTYBUFFER) && (DE_GetBufferStatus(DE_ADCBUFFER2) == DE_EMPTYBUFFER))
-				{
-					if (missingSamples <= 0)								// buffer valido
-					{
-						DE_SystemDisable();    								// disabilita il sistema ad essere sensibile ai trigger
-						// Segnala disponibiltà di un nuovo blocco:
-						if(activeBuffer == DE_ADCBUFFER1)
-						{
-							localError = DE_SetBufferAsFull(DE_ADCBUFFER1);						// segnala che il buffer1 è pronto
-							localError = localError + DE_SetActiveBuffer(DE_ADCBUFFER2);		// imposta il buffer2 per i prossimi campionamenti
-							localError = localError + DE_SetBlockStatus(DE_STARTBLOCK, DE_ADCBUFFER2);		// Quando un buffer viene attivato, blockStatus viene impostato a STARTBLOCK
-							if(localError != DE_OK)
-							{
+		/* ELABORAZIONE VALORE CAMPIONATO ----------------------------------------------------------------------------------------------- */
+		if ( DE_GetSystemStatus() == DE_TRIGGERENABLED ) {
+			missingSamples --;   		 									                                /* decremento del numero di campioni ancora da acquisire dal CH0 */
+			if ( DE_GetTriggerStatus() == DE_DETECTED ) {   					                /* IL TRIGGER È GIÀ STATO RILEVATO */
+				if
+        (
+          DE_GetBufferStatus( DE_ADCBUFFER1 ) == DE_EMPTYBUFFER && 
+          DE_GetBufferStatus( DE_ADCBUFFER2 ) == DE_EMPTYBUFFER
+        ) {
+					if ( missingSamples <= 0 ) {								                          /* buffer valido */
+						DE_SystemDisable();    								                              /* disabilita sensibilità ai trigger */
+						/* segnalazione disponibiltà nuovo blocco */
+						if ( activeBuffer == DE_ADCBUFFER1 ) {
+							err = DE_SetBufferAsFull( DE_ADCBUFFER1 );						            /* segnala buffer1 pronto */
+							err = err + DE_SetActiveBuffer( DE_ADCBUFFER2 );		              /* imposta buffer2 per i prossimi campionamenti */
+							err = err + DE_SetBlockStatus( DE_STARTBLOCK, DE_ADCBUFFER2 );		/* attivazione buffer --> blockStatus impostato a STARTBLOCK */
+							if ( err != DE_OK ) {
 								Error_Handler();
 							}
 						}
-						else
-						{
-							localError = DE_SetBufferAsFull(DE_ADCBUFFER2);						// segnala che il buffer1 è pronto
-							localError = localError + DE_SetActiveBuffer(DE_ADCBUFFER1);		// imposta il buffer2 per i prossimi campionamenti
-							localError = localError + DE_SetBlockStatus(DE_STARTBLOCK, DE_ADCBUFFER1);		// Quando un buffer viene attivato, blockStatus viene impostato a STARTBLOCK
-							if(localError != DE_OK)
-							{
+						else {
+							err = DE_SetBufferAsFull( DE_ADCBUFFER2 );						            /* segnala buffer1 è pronto */
+							err = err + DE_SetActiveBuffer( DE_ADCBUFFER1 );		              /* imposta buffer2 per i prossimi campionamenti */
+							err = err + DE_SetBlockStatus( DE_STARTBLOCK, DE_ADCBUFFER1 );		/* attivazione buffer --> blockStatus impostato a STARTBLOCK */
+							if ( err != DE_OK ) {
 								Error_Handler();
 							}
 						}
 						adcInjectedChannel_BufferIndex = 2;
-						// Prepariamo il sistema per quando sarà nuovamente abilitato a sentire i trigger:
+						/* preparazione sistema per quando sarà nuovamente sensibile ai trigger */
 						missingSamples = BUFFER_DIMENSION - 2;
 						DE_SetTriggerAsUndetected();
 					}
 				}
 			}
-			else    // IL TRIGGER NON È ANCORA STATO RILEVATO
-			{
-				if (isTrigger(adcInjectedChannel_BufferIndex) == TRUE || (mode == AUTO && missingSamples <= (((BUFFER_DIMENSION - 2) / 2) - 1)))
-				{
-					// Il campione è il trigger, oppure siamo in AUTO e abbiamo acquisito metà campioni senza trovare il trigger
-					DE_SetTriggerAsDetected();    							// segnala acquisizione trigger
-					triggerPosition = adcInjectedChannel_BufferIndex;		// memorizza posizione trigger
-					missingSamples = (((BUFFER_DIMENSION - 2) / 2) - 1);	// il numero di campioni da acquisire dopop il trigger è noto
+			else {                                                                    /* IL TRIGGER NON È ANCORA STATO RILEVATO */
+				if
+        (
+          isTrigger( adcInjectedChannel_BufferIndex ) == TRUE || 
+          ( mode == AUTO && missingSamples <= (BUFFER_DIMENSION / 2) - 2 )
+        ) {
+					/* o il campione è il trigger, oppure siamo in AUTO e abbiamo acquisito metà campioni senza trovare il trigger */
+					DE_SetTriggerAsDetected();    							                          /* segnala acquisizione trigger */
+					triggerPosition = adcInjectedChannel_BufferIndex;		                  /* memorizza posizione trigger */
+					missingSamples = (BUFFER_DIMENSION / 2) - 2;	                        /* il numero di campioni da acquisire dopop il trigger è noto */
 				}
-				else
-				{
-					if (missingSamples <= 0)
-					{
+				else {
+					if ( missingSamples <= 0 ) {
 						missingSamples = BUFFER_DIMENSION - 2;
 					}
 				}
 			}
 		}
-		// Aggiornamento indice:
+		/* aggiornamento indice */
 		adcInjectedChannel_BufferIndex = adcInjectedChannel_BufferIndex + 2;
-		if (adcInjectedChannel_BufferIndex > BUFFER_DIMENSION - 2)
-		{
+		if ( adcInjectedChannel_BufferIndex > BUFFER_DIMENSION - 2 ) {
 			adcInjectedChannel_BufferIndex = 2;
 		}
 	}
 }
 
 
+/* ---------------------------------------------------------------------------------------------------------------------------------- */
 
-void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc)
-{
+
+void HAL_ADC_ErrorCallback( ADC_HandleTypeDef *hadc ) {
 	Error_Handler();
 }
 
 
+/* ---------------------------------------------------------------------------------------------------------------------------------- */
 
-static int isTrigger(int index)
-{
-	// Confrontiamo il valore attuale con quello precedente
-	if(DE_GetActiveBuffer() == DE_ADCBUFFER1)
-	{
-		// Per gli indici 1 e 2 il valore precedente si trova alla fine del buffer
-		if((index > 2))
-		{
-			if((adcBuffer1[index] >= triggerLevel) && (adcBuffer1[index - 2] < triggerLevel))
-			{
+
+static int isTrigger( int index ) {
+	/* verifica se un campione corrisponde al trigger
+   * confronto tra il valore attuale e quello precedente
+   * per gli indici 1 e 2 il valore precedente si trova alla fine del buffer
+   */
+	if ( DE_GetActiveBuffer() == DE_ADCBUFFER1 ) {
+		if ( index > 2 ) {
+			if ( adcBuffer1[index] >= triggerLevel && adcBuffer1[index - 2] < triggerLevel ) {
 				return TRUE;
 			}
-			else
-			{
+			else {
 				return FALSE;
 			}
 		}
-		else
-		{
-			if((adcBuffer1[index] >= triggerLevel) && (adcBuffer1[BUFFER_DIMENSION - 4 + index] < triggerLevel))
-			{
+		else {
+			if ( adcBuffer1[index] >= triggerLevel && adcBuffer1[BUFFER_DIMENSION - 4 + index] < triggerLevel ) {
 				return TRUE;
 			}
-			else
-			{
+			else {
 				return FALSE;
 			}
 		}
 	}
-	else
-	{
-		if((index > 2))
-		{
-			if((adcBuffer2[index] >= triggerLevel) && (adcBuffer2[index - 2] < triggerLevel))
-			{
+	else {
+		if ( index > 2 ) {
+			if ( adcBuffer2[index] >= triggerLevel && adcBuffer2[index - 2] < triggerLevel ) {
 				return TRUE;
 			}
-			else
-			{
+			else {
 				return FALSE;
 			}
 		}
-		else
-		{
-			if((adcBuffer2[index] >= triggerLevel) && (adcBuffer2[BUFFER_DIMENSION - 4 + index] < triggerLevel))
-			{
+		else {
+			if ( adcBuffer2[index] >= triggerLevel && adcBuffer2[BUFFER_DIMENSION - 4 + index] < triggerLevel ) {
 				return TRUE;
 			}
-			else
-			{
+			else {
 				return FALSE;
 			}
 		}
@@ -574,5 +558,4 @@ static int isTrigger(int index)
 }
 
 
-
-/* END OF FILE */
+/* ---------------------------------------------------------------------------------------------------------------------------------- */
